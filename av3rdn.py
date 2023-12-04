@@ -15,7 +15,7 @@ sys.path.append(my_directory + '/utils/')
 os.environ['PYTHONPATH'] = my_directory + '/utils/'
 
 from fpa import FPA
-from shutter_position import av3_detect_shutter_states
+from av3_shutter_position import detect_shutter_states
 from leftshift import left_shift_twice
 from fixghostraster import build_ghost_matrix
 from fixghostraster import build_ghost_blur
