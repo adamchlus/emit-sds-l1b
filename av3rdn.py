@@ -5,6 +5,7 @@
 import os, sys, os.path
 import logging
 import argparse
+import json
 import numpy as np
 from spectral.io import envi
 import ray
@@ -26,7 +27,6 @@ from fixscatter import fix_scatter
 from fixghost import fix_ghost
 from pedestal import fix_pedestal
 from darksubtract import subtract_dark
-
 
 header_template = """ENVI
 description = {{AVIRIS 3 L1B calibrated spectral radiance (units: uW nm-1 cm-2 sr-1)}}
@@ -110,7 +110,6 @@ class Config:
                 dtype=np.float32).reshape((1, fpa.native_rows, fpa.native_columns))
         else:
             self.zero_offset = np.zeros((fpa.native_rows, fpa.native_columns))
-
 
         # Load ghost configuration and construct the matrix
         if hasattr(fpa,'ghost_map_file'):
