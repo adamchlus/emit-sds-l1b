@@ -321,7 +321,7 @@ def main():
     noises = []
 
     logging.debug('Detecting shutter position')
-    shutter_pos =  detect_shutter_states(args.input_file)
+    shutter_pos =  create_shutter_states(args.input_file)
 
     dark_frame_idxs = np.argwhere(shutter_pos == 0).flatten()
     science_frame_idxs =  np.argwhere(shutter_pos == 2).flatten()
