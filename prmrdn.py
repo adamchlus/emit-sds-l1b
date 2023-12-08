@@ -21,7 +21,7 @@ import pylab as plt
 # Import some PRM-specific functions
 my_directory, my_executable = os.path.split(os.path.abspath(__file__))
 
-my_directory = '/Users/achlus/data1/repos/airborne_sds/prm_l1b_radiance'
+#my_directory = '/Users/achlus/data1/repos/airborne_sds/prm_l1b_radiance'
 sys.path.append(my_directory + '/utils/')
 from prm_read import read_frames, read_frames_metadata
 from prm_pedestal import fix_pedestal
