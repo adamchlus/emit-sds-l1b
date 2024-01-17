@@ -273,16 +273,17 @@ def main():
     parser.add_argument('--max_jobs', type=int, default=40)
     args = parser.parse_args()
 
-    #Find binfac file is not provided
+    #Find binfac file if not provided
     if args.binfac is None:
-        binfac_file = args.input_file + '.binfac'
-        if os.path.isfile(binfac_file) is False:
-            logging.error(f'binfac file not found at expected location: {binfac_file}')
+        args.binfac = args.input_file + '.binfac'
+        if os.path.isfile(args.binfac) is False:
+            logging.error(f'binfac file not found at expected location: {args.binfac}')
             raise ValueError('Binfac file not found - see log for details')
-    else:
-        binfac_file = args.binfac
 
-    binfac = int(np.genfromtxt(binfac_file))
+    try:
+        binfac = int(args.binfac)
+    except:
+        binfac = int(np.genfromtxt(args.binfac))
 
     fpa = FPA(args.config_file)
     config = Config(fpa, args.mode)
