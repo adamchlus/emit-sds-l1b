@@ -10,22 +10,17 @@ import os, sys, os.path
 import scipy as sp
 import numpy as np
 from spectral.io import envi
-from datetime import datetime, timezone
-from scipy import linalg, polyfit, polyval
-import json
+from datetime import datetime
 import logging
 import argparse
-import multiprocessing
 import ray
-import pylab as plt
 
 # Import some EMIT-specific functions
 my_directory, my_executable = os.path.split(os.path.abspath(__file__))
 sys.path.append(my_directory + '/utils/')
 
-from fpa import FPA, frame_embed, frame_extract
+from fpa import FPA
 from fixbad import fix_bad
-from fixosf import fix_osf
 from fixlinearity import fix_linearity
 from fixscatter import fix_scatter
 from fixghost import fix_ghost
@@ -35,7 +30,7 @@ from fixghostraster import build_ghost_blur
 from pedestal import fix_pedestal
 from darksubtract import subtract_dark
 from leftshift import left_shift_twice
-from emit2dark import bad_flag, dark_from_file
+from emit2dark import bad_flag
 from angread import read_frames, read_frames_metadata
 
 
@@ -279,7 +274,6 @@ def main():
 
     rows = int(infile.metadata['bands']) - 1 # extra band is metadata
     columns = int(infile.metadata['samples'])
-    lines_analyzed = 0
     noises = []
 
     # Read metadata from RAW ang file
@@ -307,8 +301,10 @@ def main():
     jobs = []
     if args.debug_mode:
         result = []
+
+    lines_analyzed = 0
     for sc_idx in range(science_frame_idxs[0], science_frame_idxs[0] + len(science_frame_idxs), binfac):
-        if sc_idx + binfac > science_frame_idxs[-1]:
+        if sc_idx + binfac > science_frame_idxs[-1] + 1:
             break
         frames, frame_meta, num_read, frame_obcv = read_frames(args.input_file, binfac, fpa.native_rows, fpa.native_columns, sc_idx)
 
@@ -319,7 +315,7 @@ def main():
             result.append(calibrate_raw(frames, fpa, config))
         else:
             jobs.append(calibrate_raw_remote.remote(frames, fpa_id, config))
-        lines_analyzed = lines_analyzed + 1
+        lines_analyzed += 1
 
     num_output_lines = 0
     with open(args.output_file,'wb') as fout:
