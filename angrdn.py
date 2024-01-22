@@ -18,6 +18,7 @@ import ray
 # Import some EMIT-specific functions
 my_directory, my_executable = os.path.split(os.path.abspath(__file__))
 sys.path.append(my_directory + '/utils/')
+os.environ['PYTHONPATH'] = my_directory + '/utils/'
 
 from fpa import FPA
 from fixbad import fix_bad
