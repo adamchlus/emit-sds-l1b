@@ -16,7 +16,7 @@ sys.path.append(my_directory + '/utils/')
 os.environ['PYTHONPATH'] = my_directory + '/utils/'
 
 from fpa import FPA
-from av3_shutter_position import create_shutter_states
+from av3_shutter_position import get_shutter_states
 from leftshift import left_shift_twice
 from fixghostraster import build_ghost_matrix
 from fixghostraster import build_ghost_blur
@@ -321,7 +321,7 @@ def main():
     noises = []
 
     logging.debug('Detecting shutter position')
-    shutter_pos =  create_shutter_states(args.input_file)
+    shutter_pos =  get_shutter_states(args.input_file)
 
     dark_frame_idxs = np.argwhere(shutter_pos == 0).flatten()
     science_frame_idxs =  np.argwhere(shutter_pos == 2).flatten()
