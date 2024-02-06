@@ -10,18 +10,25 @@ import os, sys, os.path
 import scipy as sp
 import numpy as np
 from spectral.io import envi
-from datetime import datetime
+from datetime import datetime, timezone
+from scipy import linalg, polyfit, polyval
+import json
 import logging
 import argparse
+import multiprocessing
 import ray
+import pylab as plt
+
+import time
 
 # Import some EMIT-specific functions
 my_directory, my_executable = os.path.split(os.path.abspath(__file__))
 sys.path.append(my_directory + '/utils/')
 os.environ['PYTHONPATH'] = my_directory + '/utils/'
 
-from fpa import FPA
+from fpa import FPA, frame_embed, frame_extract
 from fixbad import fix_bad
+from fixosf import fix_osf
 from fixlinearity import fix_linearity
 from fixscatter import fix_scatter
 from fixghost import fix_ghost
@@ -31,7 +38,7 @@ from fixghostraster import build_ghost_blur
 from pedestal import fix_pedestal
 from darksubtract import subtract_dark
 from leftshift import left_shift_twice
-from emit2dark import bad_flag
+from emit2dark import bad_flag, dark_from_file
 from angread import read_frames, read_frames_metadata
 
 
@@ -68,7 +75,7 @@ class Config:
 
     def __init__(self, fpa, mode):
 
-
+        # Load calibration file data
         self.wl_full = None
         self.fwhm_full = None
         self.srf_correction = None
@@ -99,6 +106,20 @@ class Config:
             self.bad = np.fromfile(fpa.bad_element_file,
                  dtype = np.int16).reshape((fpa.native_rows, fpa.native_columns))
 
+            #Convert ANG version bad pixel file to EMIT version bad pixel file
+            bad_new = np.zeros(self.bad.shape)
+            for s in np.arange(bad_new.shape[1]):
+                c = 0
+                while c < bad_new.shape[0]:
+                    if self.bad[c,s] > 0:
+                        bad_new[c:c+self.bad[c,s],s] = -1
+                        c += self.bad[c,s]
+                    else:
+                        #print(f'good! {c}, {s}, {bad_copy[c,s]}',flush=True)
+                        c += 1
+
+            self.bad = bad_new.copy()
+
         if 'flat_field_file' in current_mode.keys():
             self.flat_field_file = current_mode['flat_field_file']
             self.flat_field = np.fromfile(self.flat_field_file,
@@ -120,6 +141,7 @@ class Config:
             self.linearity_evec = np.copy(np.squeeze(basis[1:,:].T))
             self.linearity_evec[np.isnan(self.linearity_evec)] = 0
             self.linearity_coeffs = envi.open(self.linearity_map_file+'.hdr').load()
+
 
 @ray.remote
 def calibrate_raw_remote(frames, fpa, config):
@@ -230,8 +252,9 @@ def main():
     parser.add_argument('--max_jobs', type=int, default=40)
     parser.add_argument('--debug_mode', action='store_true')
     parser.add_argument('--binfac', type=str, default=None)
-
     args = parser.parse_args()
+
+    start_time = time.time()
 
     fpa = FPA(args.config_file)
     config = Config(fpa, args.mode)
@@ -239,9 +262,10 @@ def main():
     #Find binfac file if not provided
     if args.binfac is None:
         args.binfac = args.input_file + '.binfac'
-        if os.path.isfile(args.binfac) is False:
-            logging.error(f'binfac file not found at expected location: {args.binfac}')
-            raise ValueError('Binfac file not found - see log for details')
+
+    if os.path.isfile(args.binfac) is False:
+        logging.error(f'binfac file not found at expected location: {args.binfac}')
+        raise ValueError('Binfac file not found - see log for details')
 
     try:
         binfac = int(args.binfac)
@@ -284,6 +308,9 @@ def main():
     dark_frame_idxs = np.where(frame_obcv == 2)[0]
     science_frame_idxs = np.where(frame_obcv[dark_frame_idxs[-1]+1:])[0] + dark_frame_idxs[-1] + 1
 
+    dark_frame_start_idx = dark_frame_idxs[fpa.dark_margin] # Trim to make sure the shutter transition isn't in the dark
+    num_dark_frames = dark_frame_idxs[-1*fpa.dark_margin]-dark_frame_start_idx
+
     logging.debug('Found {len(dark_frame_idxs)} dark frames and {len(science_frame_idxs)} science frames')
 
     if np.all(science_frame_idxs - science_frame_idxs[0] == np.arange(len(science_frame_idxs))) is False:
@@ -291,13 +318,14 @@ def main():
         raise AttributeError('Science frames are not contiguous')
 
     # Read dark
-    dark_frames, _, _, _ = read_frames(args.input_file, fpa.num_dark_frames_use, fpa.native_rows, fpa.native_columns, dark_frame_idxs[0])
-    config.dark = np.mean(dark_frames,axis=0)
+    dark_frames, _, _, _ = read_frames(args.input_file, num_dark_frames, fpa.native_rows, fpa.native_columns, dark_frame_start_idx)
+    config.dark = np.median(dark_frames,axis=0)
     config.dark_std = np.std(dark_frames,axis=0)
     del dark_frames
     logging.debug('Dark read complete, beginning calibration')
     ray.init()
     fpa_id = ray.put(fpa)
+    setup_time = time.time()
 
     jobs = []
     if args.debug_mode:
@@ -307,10 +335,11 @@ def main():
     for sc_idx in range(science_frame_idxs[0], science_frame_idxs[0] + len(science_frame_idxs), binfac):
         if sc_idx + binfac > science_frame_idxs[-1] + 1:
             break
+
         frames, frame_meta, num_read, frame_obcv = read_frames(args.input_file, binfac, fpa.native_rows, fpa.native_columns, sc_idx)
 
         if lines_analyzed%10==0:
-            logging.info('Calibrating line ' + str(lines_analyzed))
+            logging.info('Calibrating line '+str(lines_analyzed))
 
         if args.debug_mode:
             result.append(calibrate_raw(frames, fpa, config))
@@ -360,6 +389,10 @@ def main():
     with open(args.output_file+'.hdr','w') as fout:
         fout.write(header_template.format(**params))
 
+    end_time = time.time()
+    logging.info(f'Set-up time: {setup_time-start_time} seconds')
+    logging.info(f'Processing time: {end_time-setup_time} seconds')
+    logging.info(f'Completed {len(science_frame_idxs)} frames in {end_time-start_time} seconds')
     logging.info('Done')
 
 
