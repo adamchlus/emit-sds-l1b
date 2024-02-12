@@ -122,8 +122,13 @@ class Config:
 
         if 'flat_field_file' in current_mode.keys():
             self.flat_field_file = current_mode['flat_field_file']
-            self.flat_field = np.fromfile(self.flat_field_file,
-                 dtype = np.float32).reshape((2, fpa.native_rows, fpa.native_columns))
+            try:
+                self.flat_field = np.fromfile(self.flat_field_file,
+                     dtype = np.float32).reshape((2,))
+            except:
+                self.flat_field = sp.fromfile(self.flat_field_file,
+                      dtype = sp.float32).reshape((1, fpa.native_rows, fpa.native_columns))
+
             self.flat_field = self.flat_field[0,:,:]
             self.flat_field[np.logical_not(np.isfinite(self.flat_field))] = 0
 
