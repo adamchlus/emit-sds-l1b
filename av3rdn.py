@@ -271,6 +271,9 @@ def main():
             help='verbosity level: INFO, ERROR, or DEBUG')
     parser.add_argument('--log_file', type=str, default=None)
     parser.add_argument('--max_jobs', type=int, default=40)
+    parser.add_argument('--start_line', type=int, default=None)
+    parser.add_argument('--end_line', type=int, default=None)
+
     args = parser.parse_args()
 
     #Find binfac file if not provided
@@ -314,6 +317,7 @@ def main():
     if infile.metadata['interleave'] != 'bil':
         raise ValueError('Unsupported interleave')
 
+
     rows = int(infile.metadata['bands'])
     columns = int(infile.metadata['samples'])
     lines = int(infile.metadata['lines'])
@@ -324,8 +328,14 @@ def main():
     shutter_pos =  get_shutter_states(args.input_file)
 
     dark_frame_idxs = np.argwhere(shutter_pos == 0).flatten()
-    science_frame_idxs =  np.argwhere(shutter_pos == 2).flatten()
+
+    if args.start_line:
+        science_frame_idxs = np.arange(args.start_line,args.end_line)
+    else:
+        science_frame_idxs =  np.argwhere(shutter_pos == 2).flatten()
+
     science_lines = science_frame_idxs[-1] - science_frame_idxs[0]
+
     logging.debug(f'Found {len(dark_frame_idxs)} dark frames and {len(science_frame_idxs)} science frames')
     logging.debug(f'Starting science frame {science_frame_idxs[0]} ')
     logging.debug(f'Ending science frame   {science_frame_idxs[-1]} ')
