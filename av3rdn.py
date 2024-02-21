@@ -9,6 +9,7 @@ import json
 import numpy as np
 from spectral.io import envi
 import ray
+import sys
 
 # Import some AVIRIS-3-specific functions
 my_directory, my_executable = os.path.split(os.path.abspath(__file__))
@@ -271,8 +272,7 @@ def main():
             help='verbosity level: INFO, ERROR, or DEBUG')
     parser.add_argument('--log_file', type=str, default=None)
     parser.add_argument('--max_jobs', type=int, default=40)
-    parser.add_argument('--start_line', type=int, default=None)
-    parser.add_argument('--end_line', type=int, default=None)
+    parser.add_argument('--dark_science_indices', nargs='*', type=int, help='List of starting and ending indices of dark and science lines')
 
     args = parser.parse_args()
 
@@ -282,7 +282,6 @@ def main():
         if os.path.isfile(args.binfac) is False:
             logging.error(f'binfac file not found at expected location: {args.binfac}')
             raise ValueError('Binfac file not found - see log for details')
-
     try:
         binfac = int(args.binfac)
     except:
@@ -317,22 +316,26 @@ def main():
     if infile.metadata['interleave'] != 'bil':
         raise ValueError('Unsupported interleave')
 
-
     rows = int(infile.metadata['bands'])
     columns = int(infile.metadata['samples'])
     lines = int(infile.metadata['lines'])
-    nframe = rows* columns *binfac
+    nframe = rows * columns * binfac
     noises = []
 
-    logging.debug('Detecting shutter position')
-    shutter_pos =  get_shutter_states(args.input_file)
+    if args.dark_science_indices and len(args.dark_science_indices) == 4:
+        logging.debug('Using provided science and dark indices')
+        dark_start,dark_end,sci_start,sci_end = args.dark_science_indices
+        science_frame_idxs = np.arange(sci_start,sci_end+1)
+        dark_frame_idxs = np.arange(dark_start,dark_end+1)
 
-    dark_frame_idxs = np.argwhere(shutter_pos == 0).flatten()
-
-    if args.start_line:
-        science_frame_idxs = np.arange(args.start_line,args.end_line)
-    else:
+    elif not args.integers:
+        logging.debug('Detecting shutter position')
+        shutter_pos =  get_shutter_states(args.input_file)
+        dark_frame_idxs = np.argwhere(shutter_pos == 0).flatten()
         science_frame_idxs =  np.argwhere(shutter_pos == 2).flatten()
+    else:
+        logging.error(f"{len(args.dark_science_indices)} indices provided, expecting 4")
+        sys.exit(1)
 
     science_lines = science_frame_idxs[-1] - science_frame_idxs[0]
 
