@@ -300,7 +300,7 @@ def main():
     config = Config(fpa, args.mode)
 
     logging.info('Initializing ray')
-    ray.init(num_cpus=args.maxjobs,ignore_reinit_error=True)
+    ray.init(num_cpus=args.max_jobs,ignore_reinit_error=True)
     logging.info('Initialization complete, starting calibration')
 
     raw = 'Start'
