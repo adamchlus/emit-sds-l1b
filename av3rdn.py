@@ -276,6 +276,15 @@ def main():
 
     args = parser.parse_args()
 
+    # Set up logging
+    for handler in logging.root.handlers[:]:
+        logging.root.removeHandler(handler)
+    if args.log_file is None:
+        logging.basicConfig(format='%(message)s', level=args.level)
+    else:
+        logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
+            level=args.level, filename=args.log_file)
+
     #Find binfac file if not provided
     if args.binfac is None:
         args.binfac = args.input_file + '.binfac'
@@ -289,18 +298,11 @@ def main():
 
     fpa = FPA(args.config_file)
     config = Config(fpa, args.mode)
-    ray.init()
 
-    # Set up logging
-    for handler in logging.root.handlers[:]:
-        logging.root.removeHandler(handler)
-    if args.log_file is None:
-        logging.basicConfig(format='%(message)s', level=args.level)
-    else:
-        logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
-            level=args.level, filename=args.log_file)
+    logging.info('Initializing ray')
+    ray.init(num_cpus=args.maxjobs,ignore_reinit_error=True)
+    logging.info('Initialization complete, starting calibration')
 
-    logging.info('Starting calibration')
     raw = 'Start'
 
     infile = envi.open(find_header(args.input_file))
