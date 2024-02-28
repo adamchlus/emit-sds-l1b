@@ -8,6 +8,7 @@ import argparse
 import json
 import numpy as np
 from spectral.io import envi
+os.environ['RAY_worker_register_timeout_seconds'] = '30'
 import ray
 import sys
 
