@@ -289,9 +289,11 @@ def main():
     #Find binfac file if not provided
     if args.binfac is None:
         args.binfac = args.input_file + '.binfac'
+
         if os.path.isfile(args.binfac) is False:
             logging.error(f'binfac file not found at expected location: {args.binfac}')
             raise ValueError('Binfac file not found - see log for details')
+
     try:
         binfac = int(args.binfac)
     except:
