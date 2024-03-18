@@ -125,7 +125,7 @@ class Config:
             self.flat_field_file = current_mode['flat_field_file']
             try:
                 self.flat_field = np.fromfile(self.flat_field_file,
-                     dtype = np.float32).reshape((2,))
+                     dtype = np.float32).reshape((2, fpa.native_rows, fpa.native_columns))
             except:
                 self.flat_field = sp.fromfile(self.flat_field_file,
                       dtype = sp.float32).reshape((1, fpa.native_rows, fpa.native_columns))
