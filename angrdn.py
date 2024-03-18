@@ -16,6 +16,7 @@ import json
 import logging
 import argparse
 import multiprocessing
+os.environ['RAY_worker_register_timeout_seconds'] = '600'
 import ray
 import pylab as plt
 
@@ -257,6 +258,8 @@ def main():
     parser.add_argument('--max_jobs', type=int, default=40)
     parser.add_argument('--debug_mode', action='store_true')
     parser.add_argument('--binfac', type=str, default=None)
+    parser.add_argument('--dark_science_indices', nargs='*', type=int, help='List of starting and ending indices of dark and science lines')
+
     args = parser.parse_args()
 
     start_time = time.time()
@@ -306,12 +309,23 @@ def main():
     columns = int(infile.metadata['samples'])
     noises = []
 
+
+    if args.dark_science_indices and len(args.dark_science_indices) == 4:
+        logging.debug('Using provided science and dark indices')
+        dark_start,dark_end,sci_start,sci_end = args.dark_science_indices
+        science_frame_idxs = np.arange(sci_start,sci_end+1)
+        dark_frame_idxs = np.arange(dark_start,dark_end+1)
+    elif not args.dark_science_indices:
+        logging.debug('Detecting shutter position')
+        frame_meta, num_read, frame_obcv = read_frames_metadata(args.input_file, 500000, rows, columns, 0)
+        dark_frame_idxs = np.where(frame_obcv == 2)[0]
+        science_frame_idxs = np.where(frame_obcv[dark_frame_idxs[-1]+1:])[0] + dark_frame_idxs[-1] + 1
+    else:
+        logging.error(f"{len(args.dark_science_indices)} indices provided, expecting 4")
+        sys.exit(1)
+
     # Read metadata from RAW ang file
     logging.debug('Reading metadata')
-    frame_meta, num_read, frame_obcv = read_frames_metadata(args.input_file, 500000, rows, columns, 0)
-
-    dark_frame_idxs = np.where(frame_obcv == 2)[0]
-    science_frame_idxs = np.where(frame_obcv[dark_frame_idxs[-1]+1:])[0] + dark_frame_idxs[-1] + 1
 
     dark_frame_start_idx = dark_frame_idxs[fpa.dark_margin] # Trim to make sure the shutter transition isn't in the dark
     num_dark_frames = dark_frame_idxs[-1*fpa.dark_margin]-dark_frame_start_idx

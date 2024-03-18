@@ -8,7 +8,7 @@ import argparse
 import json
 import numpy as np
 from spectral.io import envi
-os.environ['RAY_worker_register_timeout_seconds'] = '30'
+os.environ['RAY_worker_register_timeout_seconds'] = '600'
 import ray
 import sys
 
@@ -331,7 +331,7 @@ def main():
         science_frame_idxs = np.arange(sci_start,sci_end+1)
         dark_frame_idxs = np.arange(dark_start,dark_end+1)
 
-    elif not args.integers:
+    elif not args.dark_science_indices:
         logging.debug('Detecting shutter position')
         shutter_pos =  get_shutter_states(args.input_file)
         dark_frame_idxs = np.argwhere(shutter_pos == 0).flatten()
