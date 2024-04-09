@@ -174,7 +174,7 @@ def calibrate_raw(frames, fpa, config):
         # Dark state subtraction
         frame = subtract_dark(frame, config.dark)
 
-        ## Delete telemetry
+        # Delete telemetry
         if hasattr(fpa,'ignore_first_row') and fpa.ignore_first_row:
            frame[0,:] = frame[1,:]
 
@@ -313,8 +313,8 @@ def main():
     if args.dark_science_indices and len(args.dark_science_indices) == 4:
         logging.debug('Using provided science and dark indices')
         dark_start,dark_end,sci_start,sci_end = args.dark_science_indices
-        science_frame_idxs = np.arange(sci_start,sci_end+1)
-        dark_frame_idxs = np.arange(dark_start,dark_end+1)
+        science_frame_idxs = np.arange(sci_start,sci_end)
+        dark_frame_idxs = np.arange(dark_start,dark_end)
     elif not args.dark_science_indices:
         logging.debug('Detecting shutter position')
         frame_meta, num_read, frame_obcv = read_frames_metadata(args.input_file, 500000, rows, columns, 0)
