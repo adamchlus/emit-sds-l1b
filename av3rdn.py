@@ -6,9 +6,12 @@ import os, sys, os.path
 import logging
 import argparse
 import json
+os.environ['RAY_worker_register_timeout_seconds'] = '600'
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["OPENBLAS_NUM_THREADS"] = "1"
 import numpy as np
 from spectral.io import envi
-os.environ['RAY_worker_register_timeout_seconds'] = '600'
 import ray
 import sys
 
