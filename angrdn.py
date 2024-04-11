@@ -107,20 +107,8 @@ class Config:
             self.bad = np.fromfile(fpa.bad_element_file,
                  dtype = np.int16).reshape((fpa.native_rows, fpa.native_columns))
 
-            #Convert ANG version bad pixel file to EMIT version bad pixel file
-            bad_new = np.zeros(self.bad.shape)
-            bad_new[self.bad!=0] = -1
-            # for s in np.arange(bad_new.shape[1]):
-            #     c = 0
-            #     while c < bad_new.shape[0]:
-            #         if self.bad[c,s] > 0:
-            #             bad_new[c:c+self.bad[c,s],s] = -1
-            #             c += self.bad[c,s]
-            #         else:
-            #             #print(f'good! {c}, {s}, {bad_copy[c,s]}',flush=True)
-            #             c += 1
-
-            self.bad = bad_new.copy()
+            if np.any((self.bad != 0) & (self.bad != -1)):
+                raise ValueError("Found bad pixel values that are not 0 or -1.")
 
         if 'flat_field_file' in current_mode.keys():
             self.flat_field_file = current_mode['flat_field_file']
