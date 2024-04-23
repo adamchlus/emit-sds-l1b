@@ -208,6 +208,7 @@ def main():
     parser.add_argument('--max_jobs', type=int, default=40)
     parser.add_argument('--debug_mode', action='store_true')
     parser.add_argument('--binfac', type=str, default=None)
+    parser.add_argument('--dark_science_indices', nargs='*', type=int, help='List of starting and ending indices of dark and science lines')
 
     # sys.argv = [
     # "script_name",
@@ -229,6 +230,7 @@ def main():
     #Find binfac file if not provided
     if args.binfac is None:
         args.binfac = args.input_file + '.binfac'
+
         if os.path.isfile(args.binfac) is False:
             logging.error(f'binfac file not found at expected location: {args.binfac}')
             raise ValueError('Binfac file not found - see log for details')
@@ -237,6 +239,7 @@ def main():
         binfac = int(args.binfac)
     except:
         binfac = int(np.genfromtxt(args.binfac))
+
 
     # Set up logging
     for handler in logging.root.handlers[:]:
@@ -270,17 +273,26 @@ def main():
     nframe = fpa.native_rows * fpa.native_columns *binfac
     noises = []
 
+    if args.dark_science_indices and len(args.dark_science_indices) == 4:
+        logging.debug('Using provided science and dark indices')
+        dark_start,dark_end,sci_start,sci_end = args.dark_science_indices
+        science_frame_idxs = np.arange(sci_start,sci_end)
+        #Add shuffer offset here
+        dark_frame_idxs = np.arange(dark_start,dark_end)
+    elif not args.dark_science_indices:
+        logging.debug('Detecting shutter position')
+        frame_meta, num_read, frame_obcv = read_frames_metadata(args.input_file, 500000, rows, columns, 0)
+        dark_frame_idxs = np.where(frame_obcv == 2)[0]
+        science_frame_idxs = np.where(frame_obcv[dark_frame_idxs[-1]+1:])[0] + dark_frame_idxs[-1] + 1
+    else:
+        logging.error(f"{len(args.dark_science_indices)} indices provided, expecting 4")
+        sys.exit(1)
+
     # Read metadata from RAW ang file
     logging.debug('Reading metadata')
-    frame_meta, num_read, frame_obcv = read_frames_metadata(args.input_file, 500000, fpa.native_rows, fpa.native_columns, 0)
 
-    dark_frame_idxs = np.where(frame_obcv == 2)[0]
-    science_frame_idxs = np.where(frame_obcv[dark_frame_idxs[-1]+1:])[0] + dark_frame_idxs[-1] + 1
-
-    #Apply shutter offset
-    science_frame_idxs = science_frame_idxs[(fpa.shutter_offset):]
-
-    binned_lines=  len(science_frame_idxs)//binfac
+    dark_frame_start_idx = dark_frame_idxs[fpa.dark_margin] # Trim to make sure the shutter transition isn't in the dark
+    num_dark_frames = dark_frame_idxs[-1*fpa.dark_margin]-dark_frame_start_idx
 
     logging.debug('Found {len(dark_frame_idxs)} dark frames and {len(science_frame_idxs)} science frames')
 
@@ -289,53 +301,44 @@ def main():
         raise AttributeError('Science frames are not contiguous')
 
     # Read dark
-    dark_frames, _, _, _ = read_frames(args.input_file, fpa.num_dark_frames_use, fpa.native_rows, fpa.native_columns, dark_frame_idxs[10])
-    config.dark = np.mean(dark_frames,axis=0)
+    dark_frames, _, _, _ = read_frames(args.input_file, num_dark_frames, fpa.native_rows, fpa.native_columns, dark_frame_start_idx)
+    config.dark = np.median(dark_frames,axis=0)
     config.dark_std = np.std(dark_frames,axis=0)
     del dark_frames
     logging.debug('Dark read complete, beginning calibration')
-    ray.init(runtime_env={"working_dir":my_directory + '/utils/'})
-
+    ray.init()
     fpa_id = ray.put(fpa)
-    current_frame = science_frame_idxs[0]
-    lines_processed = 0
-    noises = []
+    setup_time = time.time()
 
-    with open(args.input_file,'rb') as fin:
-        fin.seek(science_frame_idxs[0]*fpa.native_columns* fpa.native_rows*2)
+    jobs = []
+    if args.debug_mode:
+        result = []
 
-        with open(args.output_file,'wb') as fout:
-            raw = np.fromfile(fin, count=nframe, dtype=dtype)
-            jobs = []
+    lines_analyzed = 0
+    for sc_idx in range(science_frame_idxs[0], science_frame_idxs[0] + len(science_frame_idxs), binfac):
+        if sc_idx + binfac > science_frame_idxs[-1] + 1:
+            break
 
-            while lines_processed < binned_lines:
-                current_frame+=binfac
-                # Read frames of data
-                raw = np.array(raw, dtype=np.float32)
-                frames = raw.reshape((binfac,fpa.native_rows,fpa.native_columns))
+        frames, frame_meta, num_read, frame_obcv = read_frames(args.input_file, binfac, fpa.native_rows, fpa.native_columns, sc_idx)
 
-                if lines_processed%10==0:
-                    logging.info(f'Calibrating lines {current_frame} - {current_frame+binfac}')
+        if lines_analyzed%10==0:
+            logging.info('Calibrating line '+str(lines_analyzed))
 
-                jobs.append(calibrate_raw_remote.remote(frames, fpa_id, config))
-                lines_processed += 1
+        if args.debug_mode:
+            result.append(calibrate_raw(frames, fpa, config))
+        else:
+            jobs.append(calibrate_raw_remote.remote(frames, fpa_id, config))
+        lines_analyzed += 1
 
-                if len(jobs) == args.max_jobs:
-                    # Write to file
-                    result = ray.get(jobs)
-                    for frame, noise in result:
-                        np.asarray(frame, dtype=np.float32).tofile(fout)
-                        noises.append(noise)
-                    jobs = []
-
-                # Read next chunk
-                raw = np.fromfile(fin, count=nframe, dtype=dtype)
-
-            # Do any final jobs
+    num_output_lines = 0
+    with open(args.output_file,'wb') as fout:
+        # Do any final jobs
+        if args.debug_mode is False:
             result = ray.get(jobs)
-            for frame, noise in result:
-                np.asarray(frame, dtype=np.float32).tofile(fout)
-                noises.append(noise)
+        for frame, noise in result:
+            sp.asarray(frame, dtype=sp.float32).tofile(fout)
+            noises.append(noise)
+            num_output_lines += 1
 
     # Form output metadata strings
     wl = config.wl_full.copy()
