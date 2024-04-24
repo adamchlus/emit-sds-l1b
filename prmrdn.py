@@ -5,37 +5,25 @@
 # EMIT Radiometric Calibration code
 # Author: David R Thompson, david.r.thompson@jpl.nasa.gov
 
-import scipy.linalg
 import os, sys, os.path
 import numpy as np
 from spectral.io import envi
-from datetime import datetime, timezone
-from numpy import linalg, polyfit, polyval
 import json
 import logging
 import argparse
-import multiprocessing
 import ray
-import pylab as plt
+import time
 
 # Import some PRM-specific functions
 my_directory, my_executable = os.path.split(os.path.abspath(__file__))
 
-#my_directory = '/Users/achlus/data1/repos/airborne_sds/prm_l1b_radiance'
+my_directory = '/Users/achlus/data1/repos/airborne_sds/prm_l1b_radiance//emit-sds-l1b/'
 sys.path.append(my_directory + '/utils/')
 from prm_read import read_frames, read_frames_metadata
 from prm_pedestal import fix_pedestal
 from prm_panel_ghost import panel_ghost_corr_prism
 
-from fpa import FPA, frame_embed, frame_extract
-from fixbad import fix_bad
-from fixosf import fix_osf
-from fixlinearity import fix_linearity
-from fixscatter import fix_scatter
-from fixghost import fix_ghost
-from fixelectronicghost import fix_electronic_ghost
-from fixghostraster import build_ghost_matrix
-from fixghostraster import build_ghost_blur
+from fpa import FPA
 from darksubtract import subtract_dark
 from leftshift import left_shift_twice
 
@@ -211,18 +199,20 @@ def main():
     parser.add_argument('--dark_science_indices', nargs='*', type=int, help='List of starting and ending indices of dark and science lines')
 
     # sys.argv = [
-    # "script_name",
-    # "/Users/achlus/data1/prm/raw/prm20230411t192437_raw",
-    # "/Users/achlus/data1/repos/airborne_sds/prm_l1b_radiance/config/PRISM_radiance_test_config.json",
-    # "/Users/achlus/data1/prm/rdn/prm20230411t192437_RDN",
+    # "prmrdn.py",
+    # "/Users/achlus/data1/prm/raw/prm20231025t082804_raw",
+    # "/Users/achlus/data1/prm/rdn/prm20231025t082804_000_L1B_RDN_main_60ed9790_RDN.json",
+    # "/Users/achlus/data1/prm/rdn/prm20231025t082804_000_L1B_RDN_main_60ed9790_RDN",
     # "--mode","default",  # mode argument
     # "--level", "DEBUG",  # level argument
     # "--max_jobs", "10",  # max_jobs argument
     # "--debug_mode",  # debug_mode flag
-    # "--binfac", "/Users/achlus/data1/prm/ort/prm20230416t213508_L1B_ORT_main_b78fd43e.binfac"  # binfac argument
+    # "--binfac", "9",  # binfac argument
     # ]
 
     args = parser.parse_args()
+    # args.dark_science_indices = [0,33096,1138,6898]  #Debugging
+
 
     fpa = FPA(args.config_file)
     config = Config(fpa, args.mode)
@@ -294,7 +284,7 @@ def main():
     dark_frame_start_idx = dark_frame_idxs[fpa.dark_margin] # Trim to make sure the shutter transition isn't in the dark
     num_dark_frames = dark_frame_idxs[-1*fpa.dark_margin]-dark_frame_start_idx
 
-    logging.debug('Found {len(dark_frame_idxs)} dark frames and {len(science_frame_idxs)} science frames')
+    logging.debug(f'Found {len(dark_frame_idxs)} dark frames and {len(science_frame_idxs)} science frames')
 
     if np.all(science_frame_idxs - science_frame_idxs[0] == np.arange(len(science_frame_idxs))) is False:
         logging.error('Science frames are not contiguous, cannot proceed')
@@ -336,7 +326,7 @@ def main():
         if args.debug_mode is False:
             result = ray.get(jobs)
         for frame, noise in result:
-            sp.asarray(frame, dtype=sp.float32).tofile(fout)
+            np.asarray(frame, dtype=np.float32).tofile(fout)
             noises.append(noise)
             num_output_lines += 1
 
@@ -365,7 +355,7 @@ def main():
        if var.endswith('_file'):
           params['input_files_string'] = params['input_files_string'] + \
              ' %s=%s'%(var,getattr(fpa,var))
-    params['lines'] =  binned_lines
+    params['lines'] =  num_output_lines
 
     params.update(**locals())
     with open(args.output_file+'.hdr','w') as fout:
