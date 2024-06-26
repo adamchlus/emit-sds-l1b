@@ -61,7 +61,7 @@ def find_header(infile):
 
 class Config:
 
-    def __init__(self, fpa, mode):
+    def __init__(self, fpa, mode,integration_time):
 
         # Load calibration file data
         current_mode   = fpa.modes[mode]
@@ -106,6 +106,8 @@ class Config:
             self.radiometric_coefficient_file = current_mode['radiometric_coefficient_file']
             _, self.radiometric_calibration, self.radiometric_uncert = \
                  np.loadtxt(self.radiometric_coefficient_file).T
+
+            self.radiometric_calibration /= integration_time
         else:
             self.radiometric_calibration, self.radiometric_uncert = None, None
 
@@ -276,6 +278,7 @@ def main():
             help='verbosity level: INFO, ERROR, or DEBUG')
     parser.add_argument('--log_file', type=str, default=None)
     parser.add_argument('--max_jobs', type=int, default=40)
+    parser.add_argument('--integration_time', type=float, default=1)
     parser.add_argument('--dark_science_indices', nargs='*', type=int, help='List of starting and ending indices of dark and science lines')
 
     args = parser.parse_args()
@@ -303,7 +306,7 @@ def main():
         binfac = int(np.genfromtxt(args.binfac))
 
     fpa = FPA(args.config_file)
-    config = Config(fpa, args.mode)
+    config = Config(fpa, args.mode,args.integration_time)
 
     logging.info('Initializing ray')
     ray.init(num_cpus=args.max_jobs,ignore_reinit_error=True)
