@@ -206,12 +206,13 @@ def calibrate_raw(frames, fpa, config):
 
             if hasattr(fpa,'bad_element_file'):
                 bad = config.bad.copy()
-                bad[flagged] = -1
+                if fpa.replace_saturation:
+                    bad[flagged] = -1
                 frame = fix_bad(frame, bad, fpa)
             else:
                 bad = np.zeros(frame.shape).astype(int)
 
-            # # Optical corrections
+            # Optical corrections
             if config.srf_correction is not None:
                 frame = fix_scatter(frame, config.srf_correction, config.crf_correction)
 
@@ -306,7 +307,7 @@ def main():
         binfac = int(np.genfromtxt(args.binfac))
 
     fpa = FPA(args.config_file)
-    config = Config(fpa, args.mode,args.integration_time)
+    config = Config(fpa, args.mode, args.integration_time)
 
     logging.info('Initializing ray')
     ray.init(num_cpus=args.max_jobs,ignore_reinit_error=True)
