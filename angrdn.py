@@ -62,6 +62,18 @@ ang pge input files = {{{input_files_string}}}
 ang pge run command = {{{run_command_string}}}
 """
 
+replaced_header_template = """ENVI
+description = {{AVIRIS-NG replaced channels}}
+samples = {ncolumns}
+lines = {lines}
+bands = {nreplacedchannels}
+header offset = 0
+file type = ENVI Standard
+data type = 1
+interleave = bil
+byte order = 0
+"""
+
 
 def find_header(infile):
   if os.path.exists(infile+'.hdr'):
@@ -211,6 +223,10 @@ def calibrate_raw(frames, fpa, config):
         frame = frame[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
         frame = sp.flip(frame, axis=0)
 
+        # Clip the replaced channel mask
+        bad = bad[:,fpa.first_distributed_column:(fpa.last_distributed_column + 1)]
+        bad = bad[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
+        bad = np.flip(bad,axis = (0,1))
 
     output_frames.append(frame)
     noises.append(noise)
@@ -229,7 +245,7 @@ def calibrate_raw(frames, fpa, config):
   output_frames = np.nanmean(output_frames,axis=0)
   output_frames[np.isnan(output_frames)] = -9999
 
-  return output_frames, noises
+  return output_frames, noises, np.packbits(bad, axis=0)
 
 
 def main():
@@ -240,6 +256,7 @@ def main():
     parser.add_argument('input_file', default='')
     parser.add_argument('config_file', default='')
     parser.add_argument('output_file', default='')
+    parser.add_argument('output_replaced', default='')
     parser.add_argument('--mode', default = 'default')
     parser.add_argument('--level', default='DEBUG',
             help='verbosity level: INFO, ERROR, or DEBUG')
@@ -343,7 +360,6 @@ def main():
     for sc_idx in range(science_frame_idxs[0], science_frame_idxs[0] + len(science_frame_idxs), binfac):
         if sc_idx + binfac > science_frame_idxs[-1] + 1:
             break
-
         frames, frame_meta, num_read, frame_obcv = read_frames(args.input_file, binfac, fpa.native_rows, fpa.native_columns, sc_idx)
 
         if lines_analyzed%10==0:
@@ -357,13 +373,15 @@ def main():
 
     num_output_lines = 0
     with open(args.output_file,'wb') as fout:
-        # Do any final jobs
-        if args.debug_mode is False:
-            result = ray.get(jobs)
-        for frame, noise in result:
-            sp.asarray(frame, dtype=sp.float32).tofile(fout)
-            noises.append(noise)
-            num_output_lines += 1
+        with open(args.output_replaced,'wb') as foutreplace:
+            # Do any final jobs
+            if args.debug_mode is False:
+                result = ray.get(jobs)
+            for frame, noise,bad  in result:
+                sp.asarray(frame, dtype=sp.float32).tofile(fout)
+                np.asarray(bad, dtype=np.uint8).tofile(foutreplace)
+                noises.append(noise)
+                num_output_lines += 1
 
     # Form output metadata strings
     wl = config.wl_full.copy()
@@ -397,12 +415,18 @@ def main():
     with open(args.output_file+'.hdr','w') as fout:
         fout.write(header_template.format(**params))
 
+    # Output the header file for the replaced pixel image
+    nreplacedchannels = bad.shape[0]
+    params = {'lines': num_output_lines}
+    params.update(**locals())
+    with open(args.output_replaced+'.hdr','w') as fout:
+        fout.write(replaced_header_template.format(**params))
+
     end_time = time.time()
     logging.info(f'Set-up time: {setup_time-start_time} seconds')
     logging.info(f'Processing time: {end_time-setup_time} seconds')
     logging.info(f'Completed {len(science_frame_idxs)} frames in {end_time-start_time} seconds')
     logging.info('Done')
-
 
 if __name__ == '__main__':
 
