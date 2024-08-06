@@ -50,6 +50,19 @@ band names = {{{band_names_string}}}
 masked pixel noise = {masked_pixel_noise}
 """
 
+replaced_header_template = """ENVI
+description = {{AVIRIS-3 replaced channels}}
+samples = {ncolumns}
+lines = {lines}
+bands = {nreplacedchannels}
+header offset = 0
+file type = ENVI Standard
+data type = 1
+interleave = bil
+byte order = 0
+"""
+
+
 def find_header(infile):
     if os.path.exists(infile+'.hdr'):
         return infile+'.hdr'
@@ -273,6 +286,7 @@ def main():
     parser.add_argument('input_file', default='')
     parser.add_argument('config_file', default='')
     parser.add_argument('output_file', default='')
+    parser.add_argument('output_replaced', default='')
     parser.add_argument('--binfac', type=str, default=None)
     parser.add_argument('--mode', default = 'default')
     parser.add_argument('--level', default='DEBUG',
@@ -378,37 +392,40 @@ def main():
         fin.seek(science_frame_idxs[0]*columns*rows*2)
 
         with open(args.output_file,'wb') as fout:
-            raw = np.fromfile(fin, count=nframe, dtype=dtype)
-            jobs = []
-
-            while lines_processed < binned_lines:
-                current_frame+=binfac
-                # Read frames of data
-                raw = np.array(raw, dtype=np.float32)
-                frames = raw.reshape((binfac,rows,columns))
-
-                if lines_processed%10==0:
-                    logging.info(f'Calibrating lines {current_frame} - {current_frame+binfac}')
-
-                jobs.append(calibrate_raw.remote(frames, fpa, config))
-                lines_processed += 1
-
-                if len(jobs) == args.max_jobs:
-                    # Write to file
-                    result = ray.get(jobs)
-                    for frame, noise,bad in result:
-                        np.asarray(frame, dtype=np.float32).tofile(fout)
-                        noises.append(noise)
-                    jobs = []
-
-                # Read next chunk
+            with open(args.output_replaced,'wb') as foutreplace:
                 raw = np.fromfile(fin, count=nframe, dtype=dtype)
+                jobs = []
 
-            # Do any final jobs
-            result = ray.get(jobs)
-            for frame, noise,bad in result:
-                np.asarray(frame, dtype=np.float32).tofile(fout)
-                noises.append(noise)
+                while lines_processed < binned_lines:
+                    current_frame+=binfac
+                    # Read frames of data
+                    raw = np.array(raw, dtype=np.float32)
+                    frames = raw.reshape((binfac,rows,columns))
+
+                    if lines_processed%10==0:
+                        logging.info(f'Calibrating lines {current_frame} - {current_frame+binfac}')
+
+                    jobs.append(calibrate_raw.remote(frames, fpa, config))
+                    lines_processed += 1
+
+                    if len(jobs) == args.max_jobs:
+                        # Write to file
+                        result = ray.get(jobs)
+                        for frame, noise,bad in result:
+                            np.asarray(frame, dtype=np.float32).tofile(fout)
+                            np.asarray(bad, dtype=np.uint8).tofile(foutreplace)
+                            noises.append(noise)
+                        jobs = []
+
+                    # Read next chunk
+                    raw = np.fromfile(fin, count=nframe, dtype=dtype)
+
+                # Do any final jobs
+                result = ray.get(jobs)
+                for frame, noise,bad in result:
+                    np.asarray(frame, dtype=np.float32).tofile(fout)
+                    np.asarray(bad, dtype=np.uint8).tofile(foutreplace)
+                    noises.append(noise)
 
     # Form output metadata strings
     wl = config.wl_full.copy()
@@ -438,6 +455,12 @@ def main():
     with open(args.output_file+'.hdr','w') as fout:
         fout.write(header_template.format(**params))
 
+    # Output the header file for the replaced pixel image
+    nreplacedchannels = bad.shape[0]
+    params = {'lines': lines}
+    params.update(**locals())
+    with open(args.output_replaced+'.hdr','w') as fout:
+        fout.write(replaced_header_template.format(**params))
     logging.info('Done')
 
 
