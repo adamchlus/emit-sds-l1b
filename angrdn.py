@@ -419,6 +419,7 @@ def main():
     nreplacedchannels = bad.shape[0]
     params = {'lines': num_output_lines}
     params.update(**locals())
+    params['lines'] = binned_lines
     with open(args.output_replaced+'.hdr','w') as fout:
         fout.write(replaced_header_template.format(**params))
 

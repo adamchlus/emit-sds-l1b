@@ -457,8 +457,8 @@ def main():
 
     # Output the header file for the replaced pixel image
     nreplacedchannels = bad.shape[0]
-    params = {'lines': lines}
     params.update(**locals())
+    params['lines'] = binned_lines
     with open(args.output_replaced+'.hdr','w') as fout:
         fout.write(replaced_header_template.format(**params))
     logging.info('Done')

@@ -278,7 +278,7 @@ def main():
         logging.error(f"{len(args.dark_science_indices)} indices provided, expecting 4")
         sys.exit(1)
 
-    # Read metadata from RAW ang file
+    # Read metadata from RAW prm file
     logging.debug('Reading metadata')
 
     dark_frame_start_idx = dark_frame_idxs[fpa.dark_margin] # Trim to make sure the shutter transition isn't in the dark
