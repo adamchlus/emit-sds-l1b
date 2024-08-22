@@ -93,7 +93,7 @@ class Config:
         self.fwhm_full = None
         self.srf_correction = None
         self.crf_correction = None
-        self.bad = np.zeros((fpa.native_rows, fpa.native_columns))
+        self.bad = np.zeros((fpa.native_rows, fpa.native_columns),dtype = np.int16)
         self.flat_field = None
         self.radiometric_calibration = None
         self.radiometric_uncert = None
@@ -156,96 +156,98 @@ def calibrate_raw_remote(frames, fpa, config):
 
 def calibrate_raw(frames, fpa, config):
 
-  if len(frames.shape) == 2:
-    frames = np.reshape(frames,(1,frames.shape[0],frames.shape[1]))
+    if len(frames.shape) == 2:
+      frames = np.reshape(frames,(1,frames.shape[0],frames.shape[1]))
 
-  noises = []
-  output_frames = []
-  for _f in range(frames.shape[0]):
-    frame = frames[_f,...]
-    noise = -9999
+    noises = []
+    output_frames = []
+    for _f in range(frames.shape[0]):
+      frame = frames[_f,...]
+      noise = -9999
 
-    ## Don't calibrate a bad frame
-    if not np.all(frame <= bad_flag):
+      ## Don't calibrate a bad frame
+      if not np.all(frame <= bad_flag):
 
-        # Left shift, returning to the 16 bit range.
-        if hasattr(fpa,'left_shift_twice') and fpa.left_shift_twice:
-           frame = left_shift_twice(frame)
+          # Left shift, returning to the 16 bit range.
+          if hasattr(fpa,'left_shift_twice') and fpa.left_shift_twice:
+             frame = left_shift_twice(frame)
 
-        # Dark state subtraction
-        frame = subtract_dark(frame, config.dark)
+          # Dark state subtraction
+          frame = subtract_dark(frame, config.dark)
 
-        # Delete telemetry
-        if hasattr(fpa,'ignore_first_row') and fpa.ignore_first_row:
-           frame[0,:] = frame[1,:]
+          # Delete telemetry
+          if hasattr(fpa,'ignore_first_row') and fpa.ignore_first_row:
+             frame[0,:] = frame[1,:]
 
-        # Raw noise calculation
-        if hasattr(fpa,'masked_columns'):
-            noise = np.nanmedian(np.std(frame[:,fpa.masked_columns],axis=0))
-        elif hasattr(fpa,'masked_rows'):
-            noise = np.nanmedian(np.std(frame[fpa.masked_rows,:],axis=1))
-        else:
-            noise = -1
+          # Raw noise calculation
+          if hasattr(fpa,'masked_columns'):
+              noise = np.nanmedian(np.std(frame[:,fpa.masked_columns],axis=0))
+          elif hasattr(fpa,'masked_rows'):
+              noise = np.nanmedian(np.std(frame[fpa.masked_rows,:],axis=1))
+          else:
+              noise = -1
 
-        # Detector corrections
-        frame = fix_pedestal(frame, fpa)
+          # Detector corrections
+          frame = fix_pedestal(frame, fpa)
 
-        # Electronic ghost
-        if hasattr(fpa,'eghost_template'):
-            frame = fix_electronic_ghost(frame, fpa.eghost_samples_per_panel, np.array(fpa.eghost_template),
-                                         fpa.eghost_panel_correction, fpa.eghost_panel_multipliers)
+          # Electronic ghost
+          if hasattr(fpa,'eghost_template'):
+              frame = fix_electronic_ghost(frame, fpa.eghost_samples_per_panel, np.array(fpa.eghost_template),
+                                           fpa.eghost_panel_correction, fpa.eghost_panel_multipliers)
 
-        if config.flat_field is not None:
-            frame = frame * config.flat_field
+          if config.flat_field is not None:
+              frame = frame * config.flat_field
 
-        # Fix bad pixels, and any nonfinite results from the previous
-        # operations
-        flagged = np.logical_not(np.isfinite(frame))
-        frame[flagged] = 0
-        bad = config.bad.copy()
-        bad[flagged] = -1
-        frame = fix_bad(frame, bad, fpa)
+          # Fix bad pixels, and any nonfinite results from the previous
+          # operations
+          flagged = np.logical_not(np.isfinite(frame))
+          frame[flagged] = 0
+          bad = config.bad.copy()
+          bad[flagged] = -1
+          frame = fix_bad(frame, bad, fpa)
 
-        # Optical corrections
-        if config.srf_correction is not None:
-            frame = fix_scatter(frame, config.srf_correction, config.crf_correction)
+          # Optical corrections
+          if config.srf_correction is not None:
+              frame = fix_scatter(frame, config.srf_correction, config.crf_correction)
 
-        # Absolute radiometry
-        if config.radiometric_calibration is not None:
-            frame = (frame.T * config.radiometric_calibration).T
+          # Absolute radiometry
+          if config.radiometric_calibration is not None:
+              frame = (frame.T * config.radiometric_calibration).T
 
-        # Catch NaNs
-        frame[sp.logical_not(sp.isfinite(frame))]=0
+          # Catch NaNs
+          frame[sp.logical_not(sp.isfinite(frame))]=0
 
-    # Clip the channels to the appropriate size, if needed
-    if fpa.extract_subframe:
-        frame = frame[:,fpa.first_distributed_column:(fpa.last_distributed_column + 1)]
-        frame = frame[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
-        frame = sp.flip(frame, axis=0)
+      # Clip the channels to the appropriate size, if needed
+      if fpa.extract_subframe:
+          frame = frame[:,fpa.first_distributed_column:(fpa.last_distributed_column + 1)]
+          frame = frame[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
+          frame = sp.flip(frame, axis=0)
 
-        # Clip the replaced channel mask
-        bad = bad[:,fpa.first_distributed_column:(fpa.last_distributed_column + 1)]
-        bad = bad[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
-        bad = np.flip(bad,axis = (0,1))
+          # Clip the replaced channel mask
+          bad = bad[:,fpa.first_distributed_column:(fpa.last_distributed_column + 1)]
+          bad = bad[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
+          bad = np.flip(bad,axis = (0,1))
 
-    output_frames.append(frame)
-    noises.append(noise)
+      output_frames.append(frame)
+      noises.append(noise)
 
-  # Replace all bad data flags with -9999
-  output_frames = np.stack(output_frames)
-  output_frames[output_frames<=(bad_flag+1e-6)] = np.nan
+    # Replace all bad data flags with -9999
+    output_frames = np.stack(output_frames)
+    output_frames[output_frames<=(bad_flag+1e-6)] = np.nan
 
-  noises = np.array(noises)
-  if np.sum(noises != -9999) > 0:
-    noises = np.nanmedian(noises[noises != -9999])
-  else:
-    noises = -9999
+    noises = np.array(noises)
+    if np.sum(noises != -9999) > 0:
+      noises = np.nanmedian(noises[noises != -9999])
+    else:
+      noises = -9999
 
-  # Co-add
-  output_frames = np.nanmean(output_frames,axis=0)
-  output_frames[np.isnan(output_frames)] = -9999
+    # Co-add
+    output_frames = np.nanmean(output_frames,axis=0)
+    output_frames[np.isnan(output_frames)] = -9999
 
-  return output_frames, noises, np.packbits(bad, axis=0)
+    print('BAD TYPE',bad.dtype)
+
+    return output_frames, noises, np.packbits(bad, axis=0)
 
 
 def main():
@@ -419,7 +421,6 @@ def main():
     nreplacedchannels = bad.shape[0]
     params = {'lines': num_output_lines}
     params.update(**locals())
-    params['lines'] = num_output_lines
     with open(args.output_replaced+'.hdr','w') as fout:
         fout.write(replaced_header_template.format(**params))
 
