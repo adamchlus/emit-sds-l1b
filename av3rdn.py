@@ -219,11 +219,12 @@ def calibrate_raw(frames, fpa, config):
 
             if hasattr(fpa,'bad_element_file'):
                 bad = config.bad.copy()
-                if fpa.replace_saturation:
-                    bad[flagged] = -1
-                frame = fix_bad(frame, bad, fpa)
             else:
                 bad = np.zeros(frame.shape).astype(int)
+
+            if fpa.replace_saturation:
+                bad[flagged] = -1
+            frame = fix_bad(frame, bad, fpa)
 
             # Optical corrections
             if config.srf_correction is not None:
