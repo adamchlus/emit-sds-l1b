@@ -214,7 +214,10 @@ def calibrate_raw(frames, fpa, config):
 
             # Fix bad pixels, saturated pixels, and any nonfinite
             # results from the previous operations
-            flagged = np.logical_or(saturated, np.logical_not(np.isfinite(frame)))
+            flagged = np.logical_not(np.isfinite(frame))
+
+            if fpa.replace_saturation:
+                flagged = np.logical_or(saturated,flagged)
             frame[flagged] = 0
 
             if hasattr(fpa,'bad_element_file'):
@@ -222,8 +225,8 @@ def calibrate_raw(frames, fpa, config):
             else:
                 bad = np.zeros(frame.shape).astype(int)
 
-            if fpa.replace_saturation:
-                bad[flagged] = -1
+            bad[flagged] = -1
+
             frame = fix_bad(frame, bad, fpa)
 
             # Optical corrections
@@ -352,8 +355,8 @@ def main():
     if args.dark_science_indices and len(args.dark_science_indices) == 4:
         logging.debug('Using provided science and dark indices')
         dark_start,dark_end,sci_start,sci_end = args.dark_science_indices
-        science_frame_idxs = np.arange(sci_start,sci_end+1)
-        dark_frame_idxs = np.arange(dark_start,dark_end+1)
+        science_frame_idxs = np.arange(sci_start,sci_end)
+        dark_frame_idxs = np.arange(dark_start,dark_end)
 
     elif not args.dark_science_indices:
         logging.debug('Detecting shutter position')
@@ -364,12 +367,12 @@ def main():
         logging.error(f"{len(args.dark_science_indices)} indices provided, expecting 4")
         sys.exit(1)
 
-    science_lines = science_frame_idxs[-1] - science_frame_idxs[0]
+    science_lines = len(science_frame_idxs)
 
     logging.debug(f'Found {len(dark_frame_idxs)} dark frames and {len(science_frame_idxs)} science frames')
     logging.debug(f'Starting science frame {science_frame_idxs[0]} ')
     logging.debug(f'Ending science frame   {science_frame_idxs[-1]} ')
-    binned_lines=  len(science_frame_idxs)//binfac
+    binned_lines=  science_lines//binfac
     logging.debug(f'Output binned lines: {binned_lines}')
 
     if np.all(science_frame_idxs - science_frame_idxs[0] == np.arange(len(science_frame_idxs))) is False:
