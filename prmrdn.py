@@ -83,6 +83,17 @@ class Config:
         else:
             self.flat_field = None
 
+        if 'second_flat_field_file' in current_mode.keys():
+            self.second_flat_field_file = current_mode['second_flat_field_file']
+            self.second_flat_field_file = np.fromfile(self.second_flat_field_file,
+                                                      dtype = np.float32).reshape((1,
+                                              fpa.last_distributed_row-fpa.first_distributed_row + 1,
+                                              fpa.last_distributed_column-fpa.first_distributed_column + 1))
+            self.second_flat_field_file = self.second_flat_field_file[0,:,:]
+            self.second_flat_field_file[np.logical_not(np.isfinite(self.second_flat_field_file))] = 0
+        else:
+            self.second_flat_field_file = None
+
         if 'radiometric_coefficient_file' in current_mode.keys():
             self.radiometric_coefficient_file = current_mode['radiometric_coefficient_file']
             self.radiometric_calibration, self.radiometric_uncert,_ = \
@@ -161,6 +172,10 @@ def calibrate_raw(frames, fpa, config):
         if fpa.extract_subframe:
             frame = frame[:,fpa.first_distributed_column:(fpa.last_distributed_column + 1)]
             frame = frame[fpa.first_distributed_row:(fpa.last_distributed_row + 1),:]
+
+            if config.second_flat_field_file is not None:
+                frame *= config.second_flat_field_file
+
         output_frames.append(frame)
         noises.append(noise)
 
